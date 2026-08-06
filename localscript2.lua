@@ -50,15 +50,11 @@ MindClone = 30
 }
  
 local cooldowns = {}
-local unlockedPowers = {
-Telekinesis = true,
-Explosion = true,
-Control = true,
-Protection = true,
-Healing = true,
-Lightning = true,
-MindClone = true
-}
+local ownedPowers    = {}  -- poderes comprados (persistente en sesión)
+local equippedPowers = {}  -- poderes actualmente en el HUD (máx 3)
+local MAX_EQUIPPED   = 3
+-- unlockedPowers se mantiene como alias de equippedPowers para no romper código interno
+local unlockedPowers = equippedPowers
 local powerButtons = {}
 local shopOpen = false
 local selectedPower = nil
@@ -121,6 +117,34 @@ local function isPowerAvailable(powerName)
         end
     end
     return false
+end
+
+-- CONTAR PODERES EQUIPADOS
+local function countEquipped()
+    local n = 0
+    for _, v in pairs(equippedPowers) do if v then n = n + 1 end end
+    return n
+end
+
+-- EQUIPAR PODER (debe ser owned, y haber slot libre)
+-- Retorna: true | false, "no_owned" | "already_equipped" | "slots_full"
+local function equipPower(powerName)
+    if not ownedPowers[powerName] then return false, "no_owned" end
+    if equippedPowers[powerName] then return false, "already_equipped" end
+    if countEquipped() >= MAX_EQUIPPED then return false, "slots_full" end
+    equippedPowers[powerName] = true
+    updatePowerButtons()   -- updatePowerButtons es global, disponible al momento de llamar
+    return true
+end
+
+-- DESEQUIPAR PODER (lo quita del HUD pero sigue owned)
+local function unequipPower(powerName)
+    if not equippedPowers[powerName] then return false end
+    equippedPowers[powerName] = nil
+    if powerButtons[powerName] then
+        powerButtons[powerName].Container.Visible = false
+    end
+    return true
 end
  
 local function playPurchaseSound()
@@ -294,94 +318,140 @@ local function createPowerActivationEffect(powerName, color)
         local function createCompactShop(screenGui)
             local shopModal = Instance.new("Frame")
             shopModal.Name = "ShopModal"
-            shopModal.Size = UDim2.new(0, 500, 0, 320)
-            shopModal.Position = UDim2.new(0.5, -250, 0.5, -160)
-            shopModal.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+            shopModal.Size = UDim2.new(0, 520, 0, 340)
+            shopModal.Position = UDim2.new(0.5, -260, 0.5, -170)
+            shopModal.BackgroundColor3 = Color3.fromRGB(18, 14, 26)
             shopModal.BorderSizePixel = 0
             shopModal.Visible = false
             shopModal.ZIndex = 5000
             shopModal.Parent = screenGui
             
             local modalCorner = Instance.new("UICorner")
-            modalCorner.CornerRadius = UDim.new(0, 12)
+            modalCorner.CornerRadius = UDim.new(0, 16)
             modalCorner.Parent = shopModal
             
+            -- Sombra exterior
+            local shadowFrame = Instance.new("Frame")
+            shadowFrame.Size = UDim2.new(1, 20, 1, 20)
+            shadowFrame.Position = UDim2.new(0, -10, 0, -10)
+            shadowFrame.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+            shadowFrame.BackgroundTransparency = 0.85
+            shadowFrame.BorderSizePixel = 0
+            shadowFrame.ZIndex = 4999
+            shadowFrame.Parent = shopModal
+            local shadowCorner = Instance.new("UICorner")
+            shadowCorner.CornerRadius = UDim.new(0, 20)
+            shadowCorner.Parent = shadowFrame
+            
             local modalStroke = Instance.new("UIStroke")
-            modalStroke.Color = Color3.fromRGB(200, 30, 30)
-            modalStroke.Thickness = 3
-            modalStroke.Transparency = 0.2
+            modalStroke.Color = Color3.fromRGB(138, 43, 226)
+            modalStroke.Thickness = 2
+            modalStroke.Transparency = 0.3
             modalStroke.Parent = shopModal
             
             task.spawn(function()
-                while true do
-                    TweenService:Create(modalStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                    Color = Color3.fromRGB(255, 20, 147)
+                while shopModal and shopModal.Parent do
+                    TweenService:Create(modalStroke, TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Color = Color3.fromRGB(200, 20, 80), Transparency = 0.1
                     }):Play()
-                    task.wait(2)
-                    TweenService:Create(modalStroke, TweenInfo.new(2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
-                    Color = Color3.fromRGB(138, 43, 226)
+                    task.wait(1.8)
+                    TweenService:Create(modalStroke, TweenInfo.new(1.8, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {
+                    Color = Color3.fromRGB(138, 43, 226), Transparency = 0.3
                     }):Play()
-                    task.wait(2)
+                    task.wait(1.8)
                 end
             end)
             
+            -- HEADER
             local header = Instance.new("Frame")
-            header.Size = UDim2.new(1, 0, 0, 60)
-            header.BackgroundColor3 = Color3.fromRGB(18, 15, 22)
+            header.Size = UDim2.new(1, 0, 0, 58)
+            header.BackgroundColor3 = Color3.fromRGB(28, 20, 42)
             header.BorderSizePixel = 0
             header.ZIndex = 5001
             header.Parent = shopModal
             
             local headerCorner = Instance.new("UICorner")
-            headerCorner.CornerRadius = UDim.new(0, 12)
+            headerCorner.CornerRadius = UDim.new(0, 16)
             headerCorner.Parent = header
             
-            local headerGradient = Instance.new("UIGradient")
-            headerGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(50, 35, 70)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(35, 35, 50))
-            }
-            headerGradient.Rotation = 90
-            headerGradient.Parent = header
+            -- Línea separadora bajo el header
+            local headerLine = Instance.new("Frame")
+            headerLine.Size = UDim2.new(1, -30, 0, 1)
+            headerLine.Position = UDim2.new(0, 15, 1, -1)
+            headerLine.BackgroundColor3 = Color3.fromRGB(138, 43, 226)
+            headerLine.BackgroundTransparency = 0.6
+            headerLine.BorderSizePixel = 0
+            headerLine.ZIndex = 5002
+            headerLine.Parent = header
             
+            -- TÍTULO de la tienda
+            local titleLabel = Instance.new("TextLabel")
+            titleLabel.Size = UDim2.new(0, 180, 1, 0)
+            titleLabel.Position = UDim2.new(0, 16, 0, 0)
+            titleLabel.BackgroundTransparency = 1
+            titleLabel.Text = "⚡ TIENDA DE PODERES"
+            titleLabel.Font = Enum.Font.GothamBlack
+            titleLabel.TextSize = 17
+            titleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+            titleLabel.ZIndex = 5002
+            titleLabel.Parent = header
+            
+            -- CONTADOR DE SLOTS EQUIPADOS
+            local slotCounter = Instance.new("TextLabel")
+            slotCounter.Name = "SlotCounter"
+            slotCounter.Size = UDim2.new(0, 110, 0, 28)
+            slotCounter.Position = UDim2.new(0, 200, 0.5, -14)
+            slotCounter.BackgroundColor3 = Color3.fromRGB(40, 30, 60)
+            slotCounter.BorderSizePixel = 0
+            slotCounter.Text = "⚡ 0 / " .. MAX_EQUIPPED .. " equipados"
+            slotCounter.Font = Enum.Font.GothamBold
+            slotCounter.TextSize = 12
+            slotCounter.TextColor3 = Color3.fromRGB(200, 160, 255)
+            slotCounter.ZIndex = 5002
+            slotCounter.Parent = header
+            local slotCorner = Instance.new("UICorner")
+            slotCorner.CornerRadius = UDim.new(0, 8)
+            slotCorner.Parent = slotCounter
+            
+            -- Timer de rotación
             local timerLabel = Instance.new("TextLabel")
             timerLabel.Name = "RotationTimer"
-            timerLabel.Size = UDim2.new(0, 180, 0, 30)
-            timerLabel.Position = UDim2.new(0, 20, 0, 12)
-            timerLabel.BackgroundColor3 = Color3.fromRGB(255, 100, 100)
-            timerLabel.Text = "🔄 Renueva en: 2:00"
-            timerLabel.Font = Enum.Font.GothamBold
-            timerLabel.TextSize = 14
-            timerLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            timerLabel.Size = UDim2.new(0, 0, 0, 22)
+            timerLabel.Position = UDim2.new(0, 0, 1, 4)
+            timerLabel.BackgroundTransparency = 1
+            timerLabel.Text = ""
+            timerLabel.Font = Enum.Font.Gotham
+            timerLabel.TextSize = 11
+            timerLabel.TextColor3 = Color3.fromRGB(160, 130, 200)
             timerLabel.ZIndex = 5002
+            timerLabel.TextXAlignment = Enum.TextXAlignment.Left
             timerLabel.Parent = header
             
-            local timerCorner = Instance.new("UICorner")
-            timerCorner.CornerRadius = UDim.new(0, 8)
-            timerCorner.Parent = timerLabel
-            
-            local title = Instance.new("TextLabel")
-            title.Size = UDim2.new(0, 300, 1, 0)
-            title.Position = UDim2.new(0, 210, 0, 0)
-            title.BackgroundTransparency = 1
-            title.Text = ""
-            title.Font = Enum.Font.GothamBlack
-            title.TextSize = 24
-            title.TextColor3 = Color3.fromRGB(255, 50, 50)
-            title.TextStrokeTransparency = 0
-            title.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
-            title.TextXAlignment = Enum.TextXAlignment.Left
-            title.ZIndex = 5002
-            title.Parent = header
+            -- Función para actualizar el contador de slots
+            local function refreshSlotCounter()
+                slotCounter.Text = "⚡ " .. countEquipped() .. " / " .. MAX_EQUIPPED .. " equipados"
+                local ratio = countEquipped() / MAX_EQUIPPED
+                if ratio >= 1 then
+                    slotCounter.TextColor3 = Color3.fromRGB(255, 100, 100)
+                    slotCounter.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+                elseif ratio >= 0.5 then
+                    slotCounter.TextColor3 = Color3.fromRGB(255, 200, 100)
+                    slotCounter.BackgroundColor3 = Color3.fromRGB(50, 35, 15)
+                else
+                    slotCounter.TextColor3 = Color3.fromRGB(160, 255, 160)
+                    slotCounter.BackgroundColor3 = Color3.fromRGB(20, 40, 20)
+                end
+            end
             
             local closeButton = Instance.new("TextButton")
             closeButton.Name = "CloseButton"
-            closeButton.Size = UDim2.new(0, 45, 0, 45)
-            closeButton.Position = UDim2.new(1, -55, 0.5, -22.5)
-            closeButton.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
-            closeButton.Text = "X"
+            closeButton.Size = UDim2.new(0, 36, 0, 36)
+            closeButton.Position = UDim2.new(1, -46, 0.5, -18)
+            closeButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+            closeButton.Text = "✕"
             closeButton.Font = Enum.Font.GothamBold
-            closeButton.TextSize = 24
+            closeButton.TextSize = 20
             closeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
             closeButton.BorderSizePixel = 0
             closeButton.ZIndex = 5003
@@ -399,36 +469,34 @@ local function createPowerActivationEffect(powerName, color)
             
             closeButton.MouseEnter:Connect(function()
                 TweenService:Create(closeButton, TweenInfo.new(0.2), {
-                Size = UDim2.new(0, 50, 0, 50),
-                BackgroundColor3 = Color3.fromRGB(255, 70, 70)
+                Size = UDim2.new(0, 40, 0, 40),
+                BackgroundColor3 = Color3.fromRGB(255, 60, 60)
                 }):Play()
-                TweenService:Create(closeStroke, TweenInfo.new(0.2), {Transparency = 0.3}):Play()
             end)
             closeButton.MouseLeave:Connect(function()
                 TweenService:Create(closeButton, TweenInfo.new(0.2), {
-                Size = UDim2.new(0, 45, 0, 45),
-                BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+                Size = UDim2.new(0, 36, 0, 36),
+                BackgroundColor3 = Color3.fromRGB(180, 40, 40)
                 }):Play()
-                TweenService:Create(closeStroke, TweenInfo.new(0.2), {Transparency = 0.7}):Play()
             end)
             
             local productBox = Instance.new("Frame")
             productBox.Name = "ProductBox"
-            productBox.Size = UDim2.new(1, -30, 0, 200)
-            productBox.Position = UDim2.new(0, 15, 0, 75)
-            productBox.BackgroundColor3 = Color3.fromRGB(20, 18, 25)
+            productBox.Size = UDim2.new(1, -30, 0, 210)
+            productBox.Position = UDim2.new(0, 15, 0, 72)
+            productBox.BackgroundColor3 = Color3.fromRGB(26, 22, 38)
             productBox.BorderSizePixel = 0
             productBox.ZIndex = 5002
             productBox.Parent = shopModal
             
             local boxCorner = Instance.new("UICorner")
-            boxCorner.CornerRadius = UDim.new(0, 10)
+            boxCorner.CornerRadius = UDim.new(0, 12)
             boxCorner.Parent = productBox
             
             local boxStroke = Instance.new("UIStroke")
-            boxStroke.Color = Color3.fromRGB(180, 30, 30)
-            boxStroke.Thickness = 2
-            boxStroke.Transparency = 0.3
+            boxStroke.Color = Color3.fromRGB(100, 60, 160)
+            boxStroke.Thickness = 1
+            boxStroke.Transparency = 0.5
             boxStroke.Parent = productBox
             
             local iconContainer = Instance.new("Frame")
@@ -633,20 +701,47 @@ local function createPowerActivationEffect(powerName, color)
                 rarityBadge.BackgroundColor3 = power.Color
                 descText.Text = power.Description
                 
-                if unlockedPowers[power.Name] then
-                    actionButton.Text = "✓ DESBLOQUEADO"
-                    actionButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+                if equippedPowers[power.Name] then
+                    actionButton.Text = "🔓 DESEQUIPAR"
+                    actionButton.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+                    actionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    priceLabel.Text = "✓ EQUIPADO"
+                    priceLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+                    priceLabel.TextSize = 22
+                elseif ownedPowers[power.Name] then
+                    if countEquipped() >= MAX_EQUIPPED then
+                        actionButton.Text = "🚫 SLOTS LLENOS"
+                        actionButton.BackgroundColor3 = Color3.fromRGB(80, 55, 55)
+                        actionButton.TextColor3 = Color3.fromRGB(200, 150, 150)
+                    else
+                        actionButton.Text = "⚡ EQUIPAR"
+                        actionButton.BackgroundColor3 = Color3.fromRGB(40, 160, 80)
+                        actionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+                    end
+                    priceLabel.Text = "COMPRADO"
+                    priceLabel.TextColor3 = Color3.fromRGB(220, 180, 80)
+                    priceLabel.TextSize = 22
                 elseif not isAvailable then
                     actionButton.Text = "⏳ NO DISPONIBLE"
-                    actionButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+                    actionButton.BackgroundColor3 = Color3.fromRGB(70, 70, 80)
+                    actionButton.TextColor3 = Color3.fromRGB(160, 160, 170)
+                    priceLabel.Text = power.Price .. " 🪵"
+                    priceLabel.TextColor3 = Color3.fromRGB(139, 69, 19)
+                    priceLabel.TextSize = 28
                 else
-                    actionButton.Text = power.Price .. " 🪵"
+                    actionButton.Text = "🛒 COMPRAR"
                     actionButton.BackgroundColor3 = Color3.fromRGB(139, 69, 19)
+                    actionButton.TextColor3 = Color3.fromRGB(255, 220, 160)
+                    priceLabel.Text = power.Price .. " 🪵"
+                    priceLabel.TextColor3 = Color3.fromRGB(200, 130, 50)
+                    priceLabel.TextSize = 28
                 end
                 
-                productBox.Position = UDim2.new(1, 0, 0, 70)
+                refreshSlotCounter()
+                
+                productBox.Position = UDim2.new(1, 0, 0, 72)
                 TweenService:Create(productBox, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                Position = UDim2.new(0, 15, 0, 70)
+                Position = UDim2.new(0, 15, 0, 72)
                 }):Play()
             end
             
@@ -665,11 +760,27 @@ local function createPowerActivationEffect(powerName, color)
             actionButton.MouseButton1Click:Connect(function()
                 if not selectedPower then return end
                 
-                if unlockedPowers[selectedPower.Name] then
-                    showFeedback("⚠️ YA ESTÁ DESBLOQUEADO", Color3.fromRGB(255, 200, 100))
+                -- Si está equipado → DESEQUIPAR
+                if equippedPowers[selectedPower.Name] then
+                    unequipPower(selectedPower.Name)
+                    showFeedback("🔓 " .. selectedPower.Name:upper() .. " DESEQUIPADO", Color3.fromRGB(200, 200, 200))
+                    updateProduct(currentIndex)
                     return
                 end
                 
+                -- Si es owned pero no equipado → EQUIPAR
+                if ownedPowers[selectedPower.Name] then
+                    local ok, reason = equipPower(selectedPower.Name)
+                    if ok then
+                        showFeedback("⚡ " .. selectedPower.Name:upper() .. " EQUIPADO", Color3.fromRGB(100, 255, 100))
+                    elseif reason == "slots_full" then
+                        showFeedback("🚫 SLOTS LLENOS — desequipa un poder primero", Color3.fromRGB(255, 80, 80))
+                    end
+                    updateProduct(currentIndex)
+                    return
+                end
+                
+                -- No está disponible en la rotación actual
                 if not isPowerAvailable(selectedPower.Name) then
                     showFeedback("⏳ ESTE PODER NO ESTÁ DISPONIBLE AHORA", Color3.fromRGB(255, 150, 50))
                     return
@@ -678,21 +789,18 @@ local function createPowerActivationEffect(powerName, color)
                 -- Verificar madera
                 local leaderstats = player:FindFirstChild("leaderstats")
                 if not leaderstats then return end
-                
                 local woodValue = leaderstats:FindFirstChild("Wood")
                 if not woodValue then return end
-                
                 if woodValue.Value < selectedPower.Price then
-                    showFeedback("❌ NO TIENES SUFICIENTE MADERA (" .. selectedPower.Price .. ")", Color3.fromRGB(255, 100, 100))
+                    showFeedback("❌ MADERA INSUFICIENTE (necesitas " .. selectedPower.Price .. " 🪵)", Color3.fromRGB(255, 100, 100))
                     return
                 end
                 
-                -- Descontar madera
+                -- Comprar
                 local success = false
                 if purchaseEvent then
                     success = purchaseEvent:InvokeServer(selectedPower.Name, selectedPower.Price)
                 else
-                    -- Fallback si no existe el evento
                     if _G.AddWood then
                         _G.AddWood(player, -selectedPower.Price)
                         success = true
@@ -700,11 +808,17 @@ local function createPowerActivationEffect(powerName, color)
                 end
                 
                 if success then
-                    unlockedPowers[selectedPower.Name] = true
+                    ownedPowers[selectedPower.Name] = true
+                    -- Auto-equipar si hay slot libre
+                    if countEquipped() < MAX_EQUIPPED then
+                        equippedPowers[selectedPower.Name] = true
+                        showFeedback("✅ COMPRADO Y EQUIPADO: " .. selectedPower.Name:upper(), Color3.fromRGB(100, 255, 100))
+                    else
+                        showFeedback("✅ COMPRADO (slots llenos — equípalo desde tienda)", Color3.fromRGB(200, 255, 100))
+                    end
                     playPurchaseSound()
                     updateProduct(currentIndex)
                     updatePowerButtons()
-                    showFeedback("✅ PODER DESBLOQUEADO: " .. selectedPower.Name:upper(), Color3.fromRGB(100, 255, 100))
                 else
                     showFeedback("❌ ERROR AL COMPRAR", Color3.fromRGB(255, 100, 100))
                 end
@@ -924,15 +1038,21 @@ local function createPowerActivationEffect(powerName, color)
             }
         end
         
-        -- ACTUALIZAR BOTONES
+        -- ACTUALIZAR BOTONES (solo muestra los equipados)
         function updatePowerButtons()
-            for powerName, isUnlocked in pairs(unlockedPowers) do
-                if isUnlocked and powerButtons[powerName] then
-                    powerButtons[powerName].Container.Visible = true
-                    powerButtons[powerName].Container.Size = UDim2.new(0, 0, 0, 0)
-                    TweenService:Create(powerButtons[powerName].Container, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(0, 70, 0, 90)
-                    }):Play()
+            for _, powerData in ipairs(POWER_DATA) do
+                local powerName = powerData.Name
+                local isEquipped = equippedPowers[powerName]
+                if powerButtons[powerName] then
+                    if isEquipped then
+                        powerButtons[powerName].Container.Visible = true
+                        powerButtons[powerName].Container.Size = UDim2.new(0, 0, 0, 0)
+                        TweenService:Create(powerButtons[powerName].Container, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+                            Size = UDim2.new(0, 70, 0, 90)
+                        }):Play()
+                    else
+                        powerButtons[powerName].Container.Visible = false
+                    end
                 end
             end
         end
@@ -997,16 +1117,15 @@ local function createPowerActivationEffect(powerName, color)
                     end
                 end
                 
-                -- Buscar NPCs/Demogorgons cercanos en el Workspace
-                for _, model in pairs(workspace:GetChildren()) do
-                    if model:IsA("Model") and model:FindFirstChild("Humanoid") and model:FindFirstChild("HumanoidRootPart") then
-                        local isPlayerChar = Players:GetPlayerFromCharacter(model)
-                        if not isPlayerChar and model ~= playerCharacter then
-                            local distance = (playerCharacter.HumanoidRootPart.Position - model.HumanoidRootPart.Position).Magnitude
+                -- Buscar NPCs/Demogorgons en todo el Workspace (incluyendo carpetas anidadas)
+                for _, obj in pairs(workspace:GetDescendants()) do
+                    if obj:IsA("Model") and obj:FindFirstChildOfClass("Humanoid") and obj:FindFirstChild("HumanoidRootPart") then
+                        local isPlayerChar = Players:GetPlayerFromCharacter(obj)
+                        if not isPlayerChar and obj ~= playerCharacter then
+                            local distance = (playerCharacter.HumanoidRootPart.Position - obj.HumanoidRootPart.Position).Magnitude
                             if distance < closestDistance then
                                 closestDistance = distance
-                                -- IMPORTANTE: Retornar el modelo completo del NPC
-                                closestTarget = model
+                                closestTarget = obj
                             end
                         end
                     end
@@ -1016,6 +1135,30 @@ local function createPowerActivationEffect(powerName, color)
             end
             
             return nil
+        end
+        
+        -- ANIMACIÓN AL USAR PODER (levanta el brazo)
+        local function playPowerAnimation(character)
+            if not character then return end
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if not humanoid then return end
+            local animator = humanoid:FindFirstChildOfClass("Animator")
+            if not animator then return end
+            
+            local anim = Instance.new("Animation")
+            -- Wave emote: levanta el brazo hacia arriba
+            anim.AnimationId = "rbxassetid://507770239"
+            local ok, track = pcall(function()
+                return animator:LoadAnimation(anim)
+            end)
+            if not ok or not track then anim:Destroy() return end
+            
+            track.Priority = Enum.AnimationPriority.Action
+            track:Play()
+            task.delay(1.2, function()
+                if track then pcall(function() track:Stop(0.4) end) end
+                anim:Destroy()
+            end)
         end
         
         -- USAR PODER
@@ -1067,6 +1210,10 @@ local function createPowerActivationEffect(powerName, color)
                 startCooldown(powerName, COOLDOWN_TIMES[powerName])
                 createPowerActivationEffect(powerName, powerButtons[powerName].Color)
                 showFeedback("⚡ " .. powerName:upper() .. " ACTIVADO", powerButtons[powerName].Color)
+                -- Animación de brazo al usar poder
+                task.spawn(function()
+                    playPowerAnimation(player.Character)
+                end)
             end
         end
         
@@ -1085,7 +1232,10 @@ local function createPowerActivationEffect(powerName, color)
         MarketplaceService.PromptProductPurchaseFinished:Connect(function(userId, productId, wasPurchased)
             if userId == player.UserId and productId == HEALING_PRODUCT_ID and wasPurchased then
                 print("✅ Healing Power purchased!")
-                unlockedPowers["Healing"] = true
+                ownedPowers["Healing"] = true
+                if countEquipped() < MAX_EQUIPPED then
+                    equippedPowers["Healing"] = true
+                end
                 playPurchaseSound()
                 updatePowerButtons()
                 showFeedback("✅ HEALING POWER COMPRADO", Color3.fromRGB(100, 255, 100))
@@ -1131,8 +1281,8 @@ local function createPowerActivationEffect(powerName, color)
                     shopModal.Size = UDim2.new(0, 0, 0, 0)
                     shopModal.Position = UDim2.new(0.5, 0, 0.5, 0)
                     TweenService:Create(shopModal, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(0, 500, 0, 320),
-                    Position = UDim2.new(0.5, -250, 0.5, -160)
+                    Size = UDim2.new(0, 520, 0, 340),
+                    Position = UDim2.new(0.5, -260, 0.5, -170)
                     }):Play()
                 else
                     print("❌ Cerrando tienda...")
