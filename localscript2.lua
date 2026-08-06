@@ -1117,6 +1117,9 @@ local function createPowerActivationEffect(powerName, color)
                 end)
             end
             
+            -- MOSTRAR BOTONES DE PODERES YA DESBLOQUEADOS AL INICIAR
+            updatePowerButtons()
+            
             shopButton.MouseButton1Click:Connect(function()
                 print("🛍️ Botón de tienda clickeado")
                 shopOpen = not shopOpen

@@ -49,7 +49,15 @@ MindClone = 30
 }
  
 local cooldowns = {}
-local unlockedPowers = {}
+local unlockedPowers = {
+    Telekinesis = true,
+    Explosion = true,
+    Control = true,
+    Protection = true,
+    Healing = true,
+    Lightning = true,
+    MindClone = true
+}
 local powerButtons = {}
 local shopOpen = false
 local selectedPower = nil
@@ -1110,6 +1118,9 @@ local function createPowerActivationEffect(powerName, color)
                     handlePowerUse(powerData.Name, targetRequired and getTargetPlayer())
                 end)
             end
+            
+            -- MOSTRAR BOTONES DE PODERES YA DESBLOQUEADOS AL INICIAR
+            updatePowerButtons()
             
             shopButton.MouseButton1Click:Connect(function()
                 print("🛍️ Botón de tienda clickeado")
